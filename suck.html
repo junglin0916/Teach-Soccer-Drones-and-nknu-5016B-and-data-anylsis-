@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIoT Soccer Drone & Data Terminal</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #1a1a2e;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 15px;
+            overflow-x: hidden;
+        }
+        h1 {
+            font-size: 1.8rem;
+            color: #00ffd2;
+            margin-bottom: 5px;
+            text-align: center;
+            text-shadow: 0 0 10px rgba(0, 255, 210, 0.3);
+        }
+        p.subtitle {
+            font-size: 0.9rem;
+            color: #8b9bb4;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            width: 100%;
+            max-width: 900px;
+            background: #162447;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .game-panel {
+            flex: 3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .data-panel {
+            flex: 2;
+            background: #1f4068;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        canvas {
+            background: #0f172a;
+            border: 2px solid #00ffd2;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            max-width: 500px;
+            height: auto;
+        }
+        .controls {
+            margin-top: 10px;
+            text-align: center;
+            font-size: 0.85rem;
+            color: #e43f5a;
+        }
+        .ui-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            background: #162447;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .ui-row span {
+            font-weight: bold;
+            color: #00ffd2;
+        }
+        .terminal-log {
+            flex-grow: 1;
+            background: #000;
+            border: 1px solid #1f4068;
+            border-radius: 4px;
+            padding: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.75rem;
+            color: #39ff14;
+            overflow-y: auto;
+            max-height: 180px;
+            margin-top: 10px;
+        }
+        .btn {
+            background: #e43f5a;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        .btn:hover {
+            background: #ff4d6d;
+            box-shadow: 0 0 10px rgba(228, 63, 90, 0.5);
+        }
+        @media(max-width: 768px) {
+            .container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>AIoT Soccer Drone & Telemetry Trainer</h1>
+    <p class="subtitle">SDG 9 / 11 Integration: Clean data packets & score goals to avoid raw dataset corruption!</p>
+
+    <div class="container">
+        <div class="game-panel">
+            <canvas id="droneCanvas" width="500" height="350"></canvas>
+            <div class="controls">
+                <strong>Controls:</strong> Tap / Click screen to apply upward thrust to the NKNU 5016B Drone.
+            </div>
+            <button class="btn" id="startBtn" onclick="resetGame()">Initialize System Loop</button>
+        </div>
+
+        <div class="data-panel">
+            <div class="ui-row">
+                <div>Score Goals: <span id="uiScore">0</span></div>
+                <div>Data Collected: <span id="uiPackets">0</span></div>
+            </div>
+            <div class="ui-row">
+                <div>Data Cleaned: <span id="uiCleaned">0%</span></div>
+                <div>SDG Status: <span id="uiSdg" style="color:#ffcc00">Pending</span></div>
+            </div>
+            <div style="font-size: 0.85rem; font-weight: bold; margin-top: 5px;">
+                ThingSpeak Live Packet Database Pipeline:
+            </div>
+            <div class="terminal-log" id="terminal">
+                [SYSTEM] Ready to pair NKNU 5016B block interface with Micro:bit gateway...<br>
+                [SYSTEM] Awaiting user initialization click...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('droneCanvas');
+        const ctx = canvas.getContext('2d');
+        const terminal = document.getElementById('terminal');
+
+        // Game state and tracking variables
+        let droneY = 150;
+        let droneX = 80;
+        let velocity = 0;
+        let gravity = 0.25;
+        let lift = -5;
+        let score = 0;
+        let packetsCollected = 0;
+        let badPacketsHit = 0;
+        let isGameRunning = false;
+        let obstacles = [];
+        let dataItems = [];
+        let frameCount = 0;
+
+        // Custom logging mechanism to simulate data preprocessing actions
+        function logToTerminal(message) {
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            terminal.innerHTML += `<br>[${time}] ${message}`;
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        // Handle touch and click actions to boost drone height
+        canvas.addEventListener('click', () => {
+            if (!isGameRunning) return;
+            velocity = lift;
+            logToTerminal("NKNU_5016B: Acceleration event triggered. Thrust vector active.");
+        });
+
+        function resetGame() {
+            droneY = 150;
+            velocity = 0;
+            score = 0;
+            packetsCollected = 0;
+            badPacketsHit = 0;
+            obstacles = [];
+            dataItems = [];
+            frameCount = 0;
+            isGameRunning = true;
+            document.getElementById('startBtn').innerText = "Re-boot Master Framework";
+            
+            terminal.innerHTML = "[SYSTEM] Initializing telemetry synchronization loop over ThingSpeak...";
+            logToTerminal("SDG 9: Optimizing eco-friendly drone infrastructure algorithms.");
+            animate();
+        }
+
+        function createObstacle() {
+            // Generates soccer drone defense goals
+            let gap = 110;
+            let minHeight = 40;
+            let maxHeight = canvas.height - gap - minHeight;
+            let height = Math.floor(Math.random() * (maxHeight - minHeight + 1)) + minHeight;
+            obstacles.push({
+                x: canvas.width,
+                top: height,
+                bottom: canvas.height - (height + gap),
+                width: 35,
+                passed: false
+            });
+        }
+
+        function createDataItem() {
+            // Generates raw numeric telemetry payloads or faulty textual anomalies
+            let types = ['VALID_NUMERIC', 'CORRUPT_NULL', 'VALID_POSITION'];
+            let chosenType = types[Math.floor(Math.random() * types.length)];
+            dataItems.push({
+                x: canvas.width + Math.random() * 100,
+                y: Math.floor(Math.random() * (canvas.height - 60)) + 30,
+                type: chosenType,
+                radius: 10,
+                color: chosenType.startsWith('VALID') ? '#39ff14' : '#e43f5a'
+            });
+        }
+
+        function drawDrone() {
+            // Render Soccer Drone outer protective protective ring framework
+            ctx.beginPath();
+            ctx.arc(droneX, droneY, 16, 0, Math.PI * 2);
+            ctx.strokeStyle = '#00ffd2';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Core inner Micro:bit representation
+            ctx.fillStyle = '#1f4068';
+            ctx.fillRect(droneX - 8, droneY - 8, 16, 16);
+            
+            // LED simulation glow
+            ctx.fillStyle = '#ff0055';
+            ctx.fillRect(droneX - 4, droneY - 2, 3, 3);
+            ctx.fillRect(droneX + 1, droneY - 2, 3, 3);
+        }
+
+        function updateUI() {
+            document.getElementById('uiScore').innerText = score;
+            document.getElementById('uiPackets').innerText = packetsCollected;
+            
+            let totalProcessed = packetsCollected + badPacketsHit;
+            let cleaningRate = totalProcessed > 0 ? Math.round((packetsCollected / totalProcessed) * 100) : 100;
+            document.getElementById('uiCleaned').innerText = cleaningRate + "%";
+
+            // Map outcomes cleanly onto regional structural goals
+            let sdgElement = document.getElementById('uiSdg');
+            if (score >= 5 && cleaningRate >= 70) {
+                sdgElement.innerText = "Goal Met (SDG 9/11 Verified)";
+                sdgElement.style.color = "#39ff14";
+            } else if (cleaningRate < 50) {
+                sdgElement.innerText = "Data Inconsistent (Clean Needed)";
+                sdgElement.style.color = "#e43f5a";
+            } else {
+                sdgElement.innerText = "Analyzing Stream...";
+                sdgElement.style.color = "#ffcc00";
+            }
+        }
+
+        function animate() {
+            if (!isGameRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            frameCount++;
+
+            // Apply structural flight envelope computations
+            velocity += gravity;
+            droneY += velocity;
+
+            if (droneY + 16 > canvas.height || droneY - 16 < 0) {
+                gameOver("Drone collision with tournament boundary mesh.");
+                return;
+            }
+
+            // Spawn dynamic tournament configurations
+            if (frameCount % 120 === 0) createObstacle();
+            if (frameCount % 80 === 0) createDataItem();
+
+            // Render Soccer Obstacle/Goal structures
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let o = obstacles[i];
+                o.x -= 2;
+
+                ctx.fillStyle = '#1f4068';
+                ctx.fillRect(o.x, 0, o.width, o.top);
+                ctx.fillRect(o.x, canvas.height - o.bottom, o.width, o.bottom);
+
+                // Collision processing checker against goal nets
+                if (droneX + 16 > o.x && droneX - 16 < o.x + o.width) {
+                    if (droneY - 16 < o.top || droneY + 16 > canvas.height - o.bottom) {
+                        gameOver("Drone crashed into Goal Defense barrier structure.");
+                        return;
+                    }
+                }
+
+                // Successfully scored or navigated a soccer objective corridor
+                if (!o.passed && o.x + o.width < droneX) {
+                    o.passed = true;
+                    score++;
+                    logToTerminal(`VLOOKUP Match: Drone ID safe navigation. Score tracked!`);
+                }
+
+                if (o.x + o.width < 0) obstacles.splice(i, 1);
+            }
+
+            // Render live environmental floating sensor data node packages
+            for (let j = dataItems.length - 1; j >= 0; j--) {
+                let d = dataItems[j];
+                d.x -= 2.5;
+
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+                ctx.fillStyle = d.color;
+                ctx.fill();
+
+                // Compute intercept bounds distance
+                let dist = Math.hypot(droneX - d.x, droneY - d.y);
+                if (dist < 16 + d.radius) {
+                    if (d.type.startsWith('VALID')) {
+                        packetsCollected++;
+                        logToTerminal(`[INPUT] Telemetry validation success: ${Math.floor(Math.random()*50+20)} Hz packet received.`);
+                    } else {
+                        badPacketsHit++;
+                        logToTerminal(`[WARNING] Raw corruption packet caught! Step 1-4: Clean invalid text immediately.`);
+                    }
+                    dataItems.splice(j, 1);
+                    continue;
+                }
+
+                if (d.x + d.radius < 0) dataItems.splice(j, 1);
+            }
+
+            drawDrone();
+            updateUI();
+            requestAnimationFrame(animate);
+        }
+
+        function gameOver(reason) {
+            isGameRunning = false;
+            ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.font = "bold 24px Arial";
+            ctx.fillStyle = "#e43f5a";
+            ctx.textAlign = "center";
+            ctx.fillText("DATA TRANSMISSION TIMEOUT", canvas.width / 2, canvas.height / 2 - 10);
+            
+            ctx.font = "14px Arial";
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText(reason, canvas.width / 2, canvas.height / 2 + 20);
+            ctx.fillText("Review pivot charts and re-run your analytical terminal script.", canvas.width / 2, canvas.height / 2 + 45);
+            
+            logToTerminal(`[TERMINATED] Diagnostics loop stopped. Reason: ${reason}`);
+        }
+    </script>
+</body>
+</html>
